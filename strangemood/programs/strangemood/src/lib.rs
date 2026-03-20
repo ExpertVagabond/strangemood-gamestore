@@ -4,6 +4,71 @@ use anchor_lang::solana_program::system_instruction;
 
 declare_id!("sm2oiswDaZtMsaj1RJv4j4RycMMfyg8gtbpK2VJ1itW");
 
+// ── Security Module: Input Validation & Overflow Protection ─────────
+
+/// Maximum allowed URI length for listings
+const MAX_URI_LENGTH: usize = 256;
+
+/// Maximum allowed amount for token operations (prevents overflow attacks)
+const MAX_TOKEN_AMOUNT: u64 = 1_000_000_000_000; // 1 trillion with decimals
+
+/// Validate a string field: must be non-empty, within max length, and contain only valid UTF-8
+fn validate_string_field(value: &str, field_name: &str, max_len: usize) -> ProgramResult {
+    if value.is_empty() {
+        msg!("Security: {} is empty", field_name);
+        return Err(ProgramError::InvalidArgument);
+    }
+    if value.len() > max_len {
+        msg!("Security: {} exceeds max length {}", field_name, max_len);
+        return Err(ProgramError::InvalidArgument);
+    }
+    // Reject control characters (prevent log injection, etc.)
+    if value.chars().any(|c| c.is_control() && c != '\n') {
+        msg!("Security: {} contains control characters", field_name);
+        return Err(ProgramError::InvalidArgument);
+    }
+    Ok(())
+}
+
+/// Validate a token amount: must be > 0 and within safe bounds
+fn validate_amount(amount: u64, field_name: &str) -> ProgramResult {
+    if amount == 0 {
+        msg!("Security: {} must be > 0", field_name);
+        return Err(ProgramError::InvalidArgument);
+    }
+    if amount > MAX_TOKEN_AMOUNT {
+        msg!("Security: {} exceeds maximum allowed", field_name);
+        return Err(ProgramError::InvalidArgument);
+    }
+    Ok(())
+}
+
+/// Validate a price value: must be > 0, within safe bounds, and reasonable
+fn validate_price(price: u64) -> ProgramResult {
+    validate_amount(price, "price")
+}
+
+/// Safe multiplication with overflow check
+fn safe_multiply(a: u64, b: u64) -> Result<u64, ProgramError> {
+    a.checked_mul(b).ok_or(ProgramError::ArithmeticOverflow)
+}
+
+/// Safe addition with overflow check
+fn safe_add(a: u64, b: u64) -> Result<u64, ProgramError> {
+    a.checked_add(b).ok_or(ProgramError::ArithmeticOverflow)
+}
+
+/// Verify that an account's key matches an expected key (prevents account substitution)
+fn verify_account_key(actual: &Pubkey, expected: &Pubkey, name: &str) -> ProgramResult {
+    if actual != expected {
+        msg!("Security: {} account mismatch", name);
+        return Err(ProgramError::InvalidAccountData);
+    }
+    Ok(())
+}
+
+// ── End Security Module ─────────────────────────────────────────────
+
 pub fn mint_to_and_freeze<'a>(
     token_program: AccountInfo<'a>,
     mint: AccountInfo<'a>,
