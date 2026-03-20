@@ -151,12 +151,22 @@ pub fn move_lamports<'a>(
     source_account_info: &AccountInfo<'a>,
     dest_account_info: &AccountInfo<'a>,
     amount: u64
-) {
+) -> ProgramResult {
+    if amount == 0 {
+        return Ok(());
+    }
+    let source_lamports = source_account_info.lamports();
+    if source_lamports < amount {
+        return Err(ProgramError::InsufficientFunds);
+    }
     let dest_starting_lamports = dest_account_info.lamports();
     **dest_account_info.lamports.borrow_mut() = dest_starting_lamports
         .checked_add(amount)
-        .unwrap();
-    **source_account_info.lamports.borrow_mut() = source_account_info.lamports().checked_sub(amount).unwrap();
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    **source_account_info.lamports.borrow_mut() = source_lamports
+        .checked_sub(amount)
+        .ok_or(ProgramError::ArithmeticOverflow)?;
+    Ok(())
 }
 
 pub fn close_native_account<'a>(
@@ -209,6 +219,13 @@ pub mod strangemood {
         available: bool,
         uri: String,
     ) -> ProgramResult {
+        // Input validation
+        if price == 0 {
+            return Err(ProgramError::InvalidArgument);
+        }
+        if uri.is_empty() || uri.len() > 256 {
+            return Err(ProgramError::InvalidArgument);
+        }
 
         let charter = ctx.accounts.charter.clone().into_inner();
 
@@ -258,12 +275,17 @@ pub mod strangemood {
             return Err(StrangemoodError::UnexpectedListingMint.into());
         }
 
+        let total_cost = amount.checked_mul(listing.price)
+            .ok_or(ProgramError::ArithmeticOverflow)?;
+        if total_cost == 0 {
+            return Err(ProgramError::InvalidArgument);
+        }
         token_transfer(
             ctx.accounts.token_program.to_account_info(),
             ctx.accounts.purchase_token_account.to_account_info(),
             ctx.accounts.escrow.to_account_info(),
             ctx.accounts.user.to_account_info(),
-            amount * listing.price,
+            total_cost,
         )?;
 
         msg!("Transfered tokens");
