@@ -1,6 +1,5 @@
 {
   "name": "@strangemood/strangemood",
-  "author": "Matthew Karsten <matthewkarstenconnects@gmail.com>",
   "version": "0.0.0-71",
   "module": "./dist/esm/src/index.js",
   "main": "./dist/cjs/src/index.js",
